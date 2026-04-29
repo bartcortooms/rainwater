@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Static web app at <https://stuff.hiccup.nl/rainwater/> that sizes a rainwater catchment + tank for a vegetable garden anywhere on earth, using live climate data from Open-Meteo and (in France) auto-detected roof footprints from IGN BD TOPO. See README.md for the user-facing description and the data-source list.
+Static web app at <https://rainwater.hiccup.nl/> that sizes a rainwater catchment + tank for a vegetable garden anywhere on earth, using live climate data from Open-Meteo and (in France) auto-detected roof footprints from IGN BD TOPO. See README.md for the user-facing description and the data-source list.
 
 ## Stack
 
@@ -21,19 +21,7 @@ There are no tests, lint, or build steps. The browser is the test runner — use
 
 ## Deployment
 
-Push to `main` triggers `.github/workflows/deploy.yml`, which uploads the three site files to `gs://stuff.hiccup.nl/rainwater/` with content-types and cache-control set, then grants `AllUsers READER` on each object. The bucket uses **fine-grained ACLs** — new uploads aren't public until the ACL grant runs.
-
-The workflow only fires when `index.html`, `styles.css`, `app.js`, or the workflow itself changes. README and screenshot edits intentionally do NOT redeploy.
-
-Service account: `rainwater-deploy@barts-stuff.iam.gserviceaccount.com`, scoped to `roles/storage.objectAdmin` on `gs://stuff.hiccup.nl` only — no project-wide bindings. JSON key stored as repo secret `GCP_SA_KEY`.
-
-If a deploy starts failing on auth, the SA key may need rotation:
-```sh
-gcloud iam service-accounts keys create /tmp/k.json \
-  --iam-account=rainwater-deploy@barts-stuff.iam.gserviceaccount.com --project=barts-stuff
-gh secret set GCP_SA_KEY --repo bartcortooms/rainwater < /tmp/k.json
-shred -u /tmp/k.json
-```
+GitHub Pages serves `main` directly at `https://rainwater.hiccup.nl/`. **Pushing to `main` is the deploy** — there's no workflow, no build step, no secrets. The `CNAME` file at the repo root binds the custom domain; remove or change it only if the domain itself changes. HTTPS is required for `navigator.geolocation` to work, which is why we're on Pages and not the GCS bucket-CNAME setup.
 
 ## Architecture
 
@@ -55,7 +43,7 @@ These are bug fixes that took time to find — don't reintroduce them:
 
 4. **Roof footprint = catchment area.** Don't add a slope correction for pitched roofs. Rain falls vertically, so the horizontal projection (which the cadastre/BD TOPO polygon gives) is exactly what we want.
 
-5. **Pushing the workflow file requires the `workflow` OAuth scope** on the gh token. Default `gh auth login` doesn't include it. If a push is rejected with "refusing to allow an OAuth App to create or update workflow", run `gh auth refresh -h github.com -s workflow`.
+5. **Geolocation requires HTTPS.** `navigator.geolocation.getCurrentPosition` only works on secure contexts (HTTPS or `localhost`). The site lives on Pages specifically because GCS bucket-CNAME hosting is HTTP-only.
 
 ## Hydrology model
 

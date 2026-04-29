@@ -2,7 +2,7 @@
 
 Size a rainwater catchment + storage tank to carry a vegetable garden through the dry months — anywhere on earth.
 
-**Live: <https://stuff.hiccup.nl/rainwater/>**
+**Live: <https://rainwater.hiccup.nl/>**
 
 ![Rain — sizing a rainwater system for a vegetable garden](screenshot.jpg)
 
@@ -41,7 +41,7 @@ External APIs, all CORS-open and no key required:
 
 ## Deployment
 
-`main` auto-deploys to `gs://stuff.hiccup.nl/rainwater/` via [GitHub Actions](.github/workflows/deploy.yml). The workflow uses a service account scoped to **just that bucket** (no project-wide permissions), with the JSON key stored as the `GCP_SA_KEY` repo secret. Push the three site files (`index.html`, `styles.css`, `app.js`) to `main` and they're live in ~30 seconds.
+GitHub Pages serves the repo on `main` directly at <https://rainwater.hiccup.nl/> with auto-managed Let's Encrypt HTTPS. Pushing to `main` is the deploy — no workflow, no build step, no secrets. The `CNAME` file in the repo root binds the custom domain.
 
 ## Local development
 
