@@ -23,6 +23,8 @@ There are no tests, lint, or build steps. The browser is the test runner — use
 
 GitHub Pages serves `main` directly at `https://rainwater.hiccup.nl/`. **Pushing to `main` is the deploy** — there's no workflow, no build step, no secrets. The `CNAME` file at the repo root binds the custom domain; remove or change it only if the domain itself changes. HTTPS is required for `navigator.geolocation` to work, which is why we're on Pages and not the GCS bucket-CNAME setup.
 
+The old GCS deploy path is intentionally gone. Keep DNS pointing `rainwater.hiccup.nl` to `bartcortooms.github.io`, and do not add back a GitHub Actions deploy secret or bucket sync unless the hosting strategy changes.
+
 ## Architecture
 
 Everything lives in `app.js` at module scope. The orchestrator is `applyLocation(loc, opts)` — it sets state, fetches climate, recomputes, and (when `opts.detectRoof` is true and the location is address-level in France) kicks off the roof auto-detect. `recompute()` re-runs the simulation and re-renders all four output panels (verdict, tank chart, balance chart, heatmap) any time inputs change.

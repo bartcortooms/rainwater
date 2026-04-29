@@ -43,6 +43,8 @@ External APIs, all CORS-open and no key required:
 
 GitHub Pages serves the repo on `main` directly at <https://rainwater.hiccup.nl/> with auto-managed Let's Encrypt HTTPS. Pushing to `main` is the deploy — no workflow, no build step, no secrets. The `CNAME` file in the repo root binds the custom domain.
 
+The previous GCS bucket deployment path is retired. Keep `rainwater.hiccup.nl` pointed at `bartcortooms.github.io` via DNS; do not reintroduce bucket hosting or GitHub Actions deploy secrets unless the hosting model changes again.
+
 ## Local development
 
 ```sh
