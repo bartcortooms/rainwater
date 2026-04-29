@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Rain · sizing a rainwater system for a vegetable garden</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="canvas">
+    <header class="masthead">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 32" width="20" height="26"><path d="M12 2 C 6 12, 2 18, 2 22 a 10 10 0 0 0 20 0 C 22 18, 18 12, 12 2 Z" fill="currentColor"/></svg>
+        </span>
+        <span class="brand-word">Rain</span>
+      </div>
+      <p class="dek">Size a rainwater catchment and storage tank to carry a vegetable garden through the dry months — anywhere on earth.</p>
+    </header>
+
+    <section class="band band--location">
+      <div class="band-label">Location</div>
+      <div class="location-row">
+        <div class="location-detected">
+          <div class="location-name" id="locName">Detecting your location…</div>
+          <div class="location-meta" id="locMeta">&nbsp;</div>
+        </div>
+        <div class="location-controls">
+          <form class="location-search" id="locForm" autocomplete="off">
+            <input type="text" id="locInput" placeholder="A town, or a full address (FR auto-detects roof)" aria-label="Search location" />
+            <button type="submit" aria-label="Search">
+              <svg viewBox="0 0 24 24" width="16" height="16"><path d="M10 2 a8 8 0 1 1 0 16 a8 8 0 0 1 0-16 z m6.32 14.91 L 22 22.59 L 20.59 24 L 14.91 18.32" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            </button>
+            <div class="location-suggest" id="locSuggest" hidden></div>
+          </form>
+          <button type="button" class="precise-loc-btn" id="preciseLocBtn" title="Ask the browser for your precise location">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><circle cx="12" cy="12" r="3" fill="currentColor"/><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="12" y1="1" x2="12" y2="4" stroke="currentColor" stroke-width="1.5"/><line x1="12" y1="20" x2="12" y2="23" stroke="currentColor" stroke-width="1.5"/><line x1="1" y1="12" x2="4" y2="12" stroke="currentColor" stroke-width="1.5"/><line x1="20" y1="12" x2="23" y2="12" stroke="currentColor" stroke-width="1.5"/></svg>
+            <span>Use my precise location</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="band band--climate" id="climateBand">
+      <div class="climate-stat">
+        <div class="stat-label">Annual rainfall</div>
+        <div class="stat-value" id="annualRain">—</div>
+        <div class="stat-unit">mm / year, 5-yr avg</div>
+      </div>
+      <div class="climate-stat">
+        <div class="stat-label">Driest month</div>
+        <div class="stat-value" id="driestMonth">—</div>
+        <div class="stat-unit" id="driestVal">&nbsp;</div>
+      </div>
+      <div class="climate-stat">
+        <div class="stat-label">Peak ET₀</div>
+        <div class="stat-value" id="peakEt">—</div>
+        <div class="stat-unit">mm in the hottest month</div>
+      </div>
+      <div class="climate-stat">
+        <div class="stat-label">Growing-season deficit</div>
+        <div class="stat-value" id="seasonDeficit">—</div>
+        <div class="stat-unit">mm of irrigation needed</div>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section class="card card--inputs">
+        <h2 class="card-title">Inputs</h2>
+
+        <div class="control">
+          <label for="gardenSize">Garden area</label>
+          <div class="control-row">
+            <input type="range" id="gardenSize" min="5" max="300" step="5" value="70" />
+            <output class="control-value"><span id="gardenSizeVal">70</span> <span class="unit">m²</span></output>
+          </div>
+        </div>
+
+        <div class="control">
+          <label for="roofSize">Roof catchment</label>
+          <div class="control-row">
+            <input type="range" id="roofSize" min="10" max="400" step="5" value="100" />
+            <output class="control-value"><span id="roofSizeVal">100</span> <span class="unit">m²</span></output>
+          </div>
+          <div class="roof-status" id="roofStatus" hidden aria-live="polite"></div>
+        </div>
+
+        <div class="control">
+          <label for="tankSize">Storage tank</label>
+          <div class="control-row">
+            <input type="range" id="tankSize" min="500" max="40000" step="500" value="10000" />
+            <output class="control-value"><span id="tankSizeVal">10,000</span> <span class="unit">L</span></output>
+          </div>
+        </div>
+
+        <div class="control control--toggles">
+          <div class="toggle-group">
+            <div class="toggle-group-label">Garden practice</div>
+            <label class="toggle">
+              <input type="checkbox" id="mulchToggle" checked />
+              <span class="toggle-mark"></span>
+              <span class="toggle-text">Heavy mulching <em>cuts soil evaporation ~30%</em></span>
+              <span class="toggle-saving" id="mulchSaving">—</span>
+            </label>
+            <label class="toggle">
+              <input type="checkbox" id="dripToggle" checked />
+              <span class="toggle-mark"></span>
+              <span class="toggle-text">Drip irrigation <em>vs. watering can / sprinkler, ~20%</em></span>
+              <span class="toggle-saving" id="dripSaving">—</span>
+            </label>
+            <div class="toggle-summary" id="practiceSummary">&nbsp;</div>
+          </div>
+          <div class="toggle-group">
+            <div class="toggle-group-label">Modelling</div>
+            <label class="toggle">
+              <input type="checkbox" id="dryYearToggle" />
+              <span class="toggle-mark"></span>
+              <span class="toggle-text">Stress-test against the driest year on record</span>
+            </label>
+          </div>
+        </div>
+      </section>
+
+      <section class="card card--verdict" id="verdictCard">
+        <h2 class="card-title">Verdict</h2>
+        <div class="verdict-headline" id="verdictHeadline">Calculating…</div>
+        <div class="verdict-stats">
+          <div class="vstat">
+            <div class="vstat-label">Self-sufficient years</div>
+            <div class="vstat-value" id="vSelfSuff">—</div>
+          </div>
+          <div class="vstat">
+            <div class="vstat-label">Total shortfall, worst year</div>
+            <div class="vstat-value" id="vShortfall">—</div>
+          </div>
+          <div class="vstat">
+            <div class="vstat-label">End-of-summer reserve</div>
+            <div class="vstat-value" id="vReserve">—</div>
+          </div>
+          <div class="vstat">
+            <div class="vstat-label">Overflow lost to ground</div>
+            <div class="vstat-value" id="vOverflow">—</div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <section class="card card--chart">
+      <div class="card-header">
+        <h2 class="card-title">Tank level through the year</h2>
+        <div class="card-sub">Each line is one of the last 5 years. Where lines hit the bottom, the garden ran dry.</div>
+      </div>
+      <div class="chart-wrap">
+        <svg id="tankChart" viewBox="0 0 800 320" preserveAspectRatio="none" aria-label="Tank level chart"></svg>
+      </div>
+      <div class="legend" id="tankLegend"></div>
+    </section>
+
+    <section class="card card--chart">
+      <div class="card-header">
+        <h2 class="card-title">Roof × tank tradeoff</h2>
+        <div class="card-sub">Click anywhere on the field to pick a combination. Darker = more reliable across recent years.</div>
+      </div>
+      <div class="heatmap-wrap">
+        <svg id="heatmap" viewBox="0 0 720 440" aria-label="Tradeoff heatmap"></svg>
+      </div>
+    </section>
+
+    <section class="card card--chart">
+      <div class="card-header">
+        <h2 class="card-title">Monthly water balance</h2>
+        <div class="card-sub">Rainfall captured by the roof versus what the garden draws, averaged across the period.</div>
+      </div>
+      <div class="chart-wrap chart-wrap--bars">
+        <svg id="balanceChart" viewBox="0 0 800 280" aria-label="Monthly balance chart"></svg>
+      </div>
+    </section>
+
+    <footer class="colophon">
+      <p>Climate data from <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>'s ERA5 archive · ET₀ via FAO-56 Penman-Monteith · runoff coefficient 0.8 · density-corrected vegetable Kc 0.35–0.90 (Pereira et al. 2021) · mulch evap-reduction per FAO-56 Ch. 10 · effective rainfall 0.85 (FAO Bull. 25 / SCS, oceanic regime) · French roof footprints from <a href="https://geoservices.ign.fr/bdtopo" target="_blank" rel="noopener">IGN BD TOPO</a>, addresses from <a href="https://adresse.data.gouv.fr/" target="_blank" rel="noopener">BAN</a>, basemap from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>.</p>
+    </footer>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
