@@ -615,6 +615,15 @@ input[type="range"]:focus::-webkit-slider-thumb { border-color: var(--rain); }
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
 }
+.verdict-note {
+  margin-top: 16px;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 14px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-mute);
+}
+.verdict-note strong { color: var(--ink); font-weight: 600; }
 
 /* ───────── Charts ───────── */
 .chart-wrap { width: 100%; }

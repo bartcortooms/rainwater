@@ -26,6 +26,8 @@ In France, the address can also auto-fill the roof catchment area from the offic
 
 **Simulation.** Daily two-pass tank balance chained chronologically across the decade, with steady-state warmup. Tank fills from the roof, spills at capacity, drains to the garden, runs dry when empty. Daily stepping matters: monthly yield-after-spillage models systematically understate what a small, frequently-refilling tank delivers (Fewkes & Butler 2000; Mitchell 2007). The verdict counts how many complete years finished without a shortfall; the current partial year is drawn on the chart up to today but not counted.
 
+**Sizing philosophy.** Storage has steeply diminishing returns: most of a "fully self-sufficient" tank exists only to bridge the rarest drought, replacing a few euros of mains water per year with thousands of litres of plastic. When a configuration falls short, the verdict therefore quantifies the mains top-up needed rather than treating those years as failures — the sensible target for most gardens is a tank sized for a normal summer plus tap backup, with demand-side measures (shade cloth, crop timing, soil improvement) before extra storage.
+
 **Roof footprint (France only).** Address geocoded via [BAN](https://adresse.data.gouv.fr/), then the IGN [BD TOPO](https://geoservices.ign.fr/bdtopo) WFS returns the building polygons within ~40 m. Footprint area is computed from the polygon (equirectangular projection — sub-1% error for buildings). The horizontal projection is exactly the catchment area for vertical rain — pitched roofs collect the same amount as their footprint.
 
 ## Stack

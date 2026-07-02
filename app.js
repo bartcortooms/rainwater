@@ -417,6 +417,24 @@ function renderVerdict(results, params) {
   $('vShortfall').textContent = worst && worst.shortfall > 0 ? fmtL(worst.shortfall) : '0 L';
   $('vReserve').textContent = fmtL(Math.max(0, minSepReserve));
   $('vOverflow').textContent = fmtL(avgOverflow) + ' / yr avg';
+
+  // Perspective note: a shortfall year is not a failed garden. Storage has
+  // steeply diminishing returns — the last few % of self-sufficiency can cost
+  // several extra tanks to replace a few euros of mains water per year.
+  const note = $('verdictNote');
+  if (ok < total) {
+    const avgShort = full.reduce((s, r) => s + r.shortfall, 0) / total;
+    const eur = Math.max(1, Math.round(avgShort * 4 / 1000));
+    note.hidden = false;
+    note.innerHTML = `A shortfall isn't a failed garden — bridging it from the tap averages ` +
+      `<strong>${fmtL(avgShort)}</strong> a year (${fmtL(worst.shortfall)} in the worst year), ` +
+      `roughly €${eur} of mains water at ~€4/m³. That is usually far cheaper than more tanks: ` +
+      `size storage for a normal summer, and treat full autonomy as insurance that only pays off ` +
+      `where drought restrictions cut off tap watering. Cutting demand is cheaper still — ` +
+      `shade cloth in the hottest weeks, and crops timed to finish before late summer.`;
+  } else {
+    note.hidden = true;
+  }
 }
 
 function renderSavings() {
