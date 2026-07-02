@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Rain · sizing a rainwater system for a vegetable garden</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 3C16 3 6 15 6 21a10 10 0 0 0 20 0C26 15 16 3 16 3Z' fill='%232f5d7a'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -48,7 +49,7 @@
       <div class="climate-stat">
         <div class="stat-label">Annual rainfall</div>
         <div class="stat-value" id="annualRain">—</div>
-        <div class="stat-unit">mm / year, 5-yr avg</div>
+        <div class="stat-unit">mm / year, 10-yr avg</div>
       </div>
       <div class="climate-stat">
         <div class="stat-label">Driest month</div>
@@ -102,13 +103,13 @@
             <label class="toggle">
               <input type="checkbox" id="mulchToggle" checked />
               <span class="toggle-mark"></span>
-              <span class="toggle-text">Heavy mulching <em>cuts soil evaporation ~30%</em></span>
+              <span class="toggle-text">Heavy mulching <em>cuts water demand ~25%</em></span>
               <span class="toggle-saving" id="mulchSaving">—</span>
             </label>
             <label class="toggle">
               <input type="checkbox" id="dripToggle" checked />
               <span class="toggle-mark"></span>
-              <span class="toggle-text">Drip irrigation <em>vs. watering can / sprinkler, ~20%</em></span>
+              <span class="toggle-text">Drip irrigation <em>90% vs ~75% application efficiency</em></span>
               <span class="toggle-saving" id="dripSaving">—</span>
             </label>
             <div class="toggle-summary" id="practiceSummary">&nbsp;</div>
@@ -151,7 +152,7 @@
     <section class="card card--chart">
       <div class="card-header">
         <h2 class="card-title">Tank level through the year</h2>
-        <div class="card-sub">Each line is one of the last 5 years. Where lines hit the bottom, the garden ran dry.</div>
+        <div class="card-sub">One line per year over the last decade, day by day — the gold line is the current year, up to today. Where lines hit the bottom, the garden ran dry.</div>
       </div>
       <div class="chart-wrap">
         <svg id="tankChart" viewBox="0 0 800 320" preserveAspectRatio="none" aria-label="Tank level chart"></svg>
@@ -180,7 +181,7 @@
     </section>
 
     <footer class="colophon">
-      <p>Climate data from <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>'s ERA5 archive · ET₀ via FAO-56 Penman-Monteith · runoff coefficient 0.8 · density-corrected vegetable Kc 0.35–0.90 (Pereira et al. 2021) · mulch evap-reduction per FAO-56 Ch. 10 · effective rainfall 0.85 (FAO Bull. 25 / SCS, oceanic regime) · French roof footprints from <a href="https://geoservices.ign.fr/bdtopo" target="_blank" rel="noopener">IGN BD TOPO</a>, addresses from <a href="https://adresse.data.gouv.fr/" target="_blank" rel="noopener">BAN</a>, basemap from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>.</p>
+      <p>Climate data from <a href="https://open-meteo.com/" target="_blank" rel="noopener">Open-Meteo</a>'s ERA5 archive · ET₀ via FAO-56 Penman-Monteith · daily water balance with a 25 mm root-zone reserve (FAO-56 Ch. 8) · runoff coefficient 0.8 · density-corrected vegetable Kc 0.35–0.90 (Pereira et al. 2021) · mulch evap-reduction per FAO-56 Ch. 10 · drip 90% vs hand-watering 75% application efficiency · French roof footprints from <a href="https://geoservices.ign.fr/bdtopo" target="_blank" rel="noopener">IGN BD TOPO</a>, addresses from <a href="https://adresse.data.gouv.fr/" target="_blank" rel="noopener">BAN</a>, basemap from <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>.</p>
     </footer>
   </div>
 

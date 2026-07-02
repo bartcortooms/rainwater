@@ -10,11 +10,18 @@
 // so the seasonal-average Kc runs ~15–20% lower (Pereira et al. 2021).
 const KC_NORTH = [0, 0, 0.35, 0.60, 0.75, 0.85, 0.90, 0.85, 0.60, 0.40, 0, 0];
 const RUNOFF = 0.8;          // fraction of rain leaving the roof as usable water
-const EFF_RAIN = 0.85;       // FAO Bulletin 25 / USDA SCS for oceanic rain regimes,
-                             // raised further by mulch (FAO-56 Ch. 7 note)
-const MULCH_FACTOR = 0.70;   // 30% — heavy organic mulch reduces soil evap 28–58%;
-                             // ~25% of total ETc per FAO-56 Ch. 10
-const DRIP_FACTOR = 0.80;    // 20% — drip vs sprinkler/watering can
+const SOIL_RAW = 25;         // mm of readily-available water in the veg root zone
+                             // (FAO-56: ~0.3 m rooting depth × 0.14 AWC × p ≈ 0.55).
+                             // Rain tops this bucket up, excess percolates past the
+                             // roots — effective rainfall emerges from the bucket
+                             // instead of a flat monthly fraction.
+const MULCH_FACTOR = 0.75;   // 25% ET cut — heavy organic mulch halves soil evap,
+                             // which is ~25–40% of ETc for row crops (FAO-56 Ch. 10;
+                             // Mao et al. 2024 review). Applied to total ETc.
+const APP_EFF_DRIP = 0.90;   // application efficiency, drip (USDA-ARS 90–95%)
+const APP_EFF_HAND = 0.75;   // application efficiency, watering can / sprinkler (65–75%)
+const CLIMATE_YEARS = 10;    // complete years simulated; the current partial year
+                             // is chained on top and drawn as "so far"
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 const MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -86,11 +93,14 @@ async function searchLocations(query) {
 
 async function fetchClimate(lat, lon) {
   const now = new Date();
-  // ERA5 archive lags ~5 days. Use last 5 complete calendar years.
-  const endYear = now.getFullYear() - 1;
-  const startYear = endYear - 4;
+  // ERA5 archive lags ~6 days. Fetch the last CLIMATE_YEARS complete calendar
+  // years plus the current year up to the archive edge.
+  const endDate = new Date(now.getTime() - 6 * 86400e3);
+  const lastFullYear = endDate.getFullYear() - 1;
+  const startYear = lastFullYear - (CLIMATE_YEARS - 1);
+  const iso = d => d.toISOString().slice(0, 10);
   const url = `https://archive-api.open-meteo.com/v1/archive?latitude=${lat}&longitude=${lon}` +
-              `&start_date=${startYear}-01-01&end_date=${endYear}-12-31` +
+              `&start_date=${startYear}-01-01&end_date=${iso(endDate)}` +
               `&daily=precipitation_sum,et0_fao_evapotranspiration&timezone=auto`;
   const res = await fetch(url);
   if (!res.ok) throw new Error('Climate fetch failed: ' + res.status);
@@ -98,106 +108,143 @@ async function fetchClimate(lat, lon) {
   return parseClimate(data, lat);
 }
 
+// Month-midpoint day-of-year, for daily Kc interpolation.
+const KC_MID = [15, 45, 74, 105, 135, 166, 196, 227, 258, 288, 319, 349];
+function kcAt(doy, kc) {
+  let i = KC_MID.findIndex(m => m > doy);
+  if (i === -1) i = 0;
+  const j = (i + 11) % 12;
+  const span = (KC_MID[i] - KC_MID[j] + 365) % 365 || 365;
+  const t = ((doy - KC_MID[j] + 365) % 365) / span;
+  return kc[j] + (kc[i] - kc[j]) * t;
+}
+
 function parseClimate(data, lat) {
   const days = data.daily.time;
   const rains = data.daily.precipitation_sum;
   const ets = data.daily.et0_fao_evapotranspiration;
 
+  // Crop coefficient: shift 6 months for southern hemisphere
+  const kc = lat >= 0 ? KC_NORTH.slice() : KC_NORTH.slice(6).concat(KC_NORTH.slice(0, 6));
+
+  // Group into per-year daily arrays with a daily-interpolated Kc.
   const byYear = {};
   for (let i = 0; i < days.length; i++) {
     const [y, m] = days[i].split('-').map(Number);
-    if (!byYear[y]) byYear[y] = Array.from({length: 12}, () => ({ rain: 0, et0: 0 }));
-    byYear[y][m - 1].rain += rains[i] ?? 0;
-    byYear[y][m - 1].et0  += ets[i]   ?? 0;
+    if (!byYear[y]) byYear[y] = { year: y, rain: [], et0: [], month: [], kcd: [] };
+    const Y = byYear[y];
+    Y.rain.push(rains[i] ?? 0);
+    Y.et0.push(ets[i] ?? 0);
+    Y.month.push(m - 1);
+    Y.kcd.push(kcAt(Y.rain.length - 1, kc));
   }
+  const all = Object.values(byYear).sort((a, b) => a.year - b.year);
+  // The trailing year is partial unless the archive happens to end on Dec 31.
+  const last = all[all.length - 1];
+  const partial = last.rain.length < 365 ? all.pop() : null;
+  const years = all;
 
-  const years = Object.keys(byYear).sort().map(y => ({ year: +y, monthly: byYear[y] }));
-
-  // Average across years
+  // Monthly aggregates of complete years, for the climate band and heatmap copy.
   const avgMonthly = Array.from({length: 12}, () => ({ rain: 0, et0: 0 }));
-  for (const yr of years) {
-    for (let m = 0; m < 12; m++) {
-      avgMonthly[m].rain += yr.monthly[m].rain / years.length;
-      avgMonthly[m].et0  += yr.monthly[m].et0  / years.length;
+  for (const Y of years) {
+    for (let i = 0; i < Y.rain.length; i++) {
+      avgMonthly[Y.month[i]].rain += Y.rain[i] / years.length;
+      avgMonthly[Y.month[i]].et0  += Y.et0[i]  / years.length;
     }
   }
-
-  // Crop coefficient: shift 6 months for southern hemisphere
-  const kc = lat >= 0 ? KC_NORTH.slice() : KC_NORTH.slice(6).concat(KC_NORTH.slice(0, 6));
 
   const annualRain = avgMonthly.reduce((s, m) => s + m.rain, 0);
   const peakEt = Math.max(...avgMonthly.map(m => m.et0));
   const driestIdx = avgMonthly.reduce((min, m, i, arr) => m.rain < arr[min].rain ? i : min, 0);
 
-  // Average seasonal deficit (mm) — irrigation that would be needed for a generic veg garden
+  // Average seasonal deficit (mm/m², no practices): run the daily soil bucket.
   let seasonDeficit = 0;
-  for (let m = 0; m < 12; m++) {
-    const etcrop = avgMonthly[m].et0 * kc[m];
-    const effRain = Math.min(avgMonthly[m].rain * EFF_RAIN, etcrop);
-    seasonDeficit += Math.max(0, etcrop - effRain);
+  for (const Y of years) {
+    let soil = SOIL_RAW;
+    for (let i = 0; i < Y.rain.length; i++) {
+      soil = Math.min(soil + Y.rain[i], SOIL_RAW) - Y.et0[i] * Y.kcd[i];
+      if (soil < 0) { seasonDeficit += -soil / years.length; soil = 0; }
+    }
   }
 
-  return { years, avgMonthly, annualRain, peakEt, driestIdx, seasonDeficit, kc };
+  return { years, partial, avgMonthly, annualRain, peakEt, driestIdx, seasonDeficit, kc };
 }
 
 /* ─────────────── Simulation ─────────────── */
 
-function demandMult(mulch, drip) {
-  let m = 1.0;
-  if (mulch) m *= MULCH_FACTOR;
-  if (drip)  m *= DRIP_FACTOR;
-  return m;
-}
-
-// Simulate one year, returning monthly tank levels (length 13: start + after each month)
-function simulateYear(monthly, kc, params) {
-  const { gardenSize, roofSize, tankSize, mult, startTank } = params;
+// Simulate one year with a daily water balance:
+//  - the tank fills from the roof and spills at capacity (daily YAS — monthly
+//    stepping systematically understates how much a small tank delivers,
+//    Fewkes & Butler 2000, Mitchell 2007);
+//  - a root-zone bucket (SOIL_RAW mm) receives rain and loses ETc = ET0 × Kc,
+//    reduced by mulch; whenever it empties, the gardener replaces the deficit
+//    from the tank, divided by the application efficiency of their method.
+// Returns daily tank levels (length nDays+1) unless params.record === false.
+function simulateYear(Y, params, startTank, startSoil) {
+  const { gardenSize, roofSize, tankSize, mulch, drip } = params;
+  const record = params.record !== false;
+  const etMult = mulch ? MULCH_FACTOR : 1;
+  const appEff = drip ? APP_EFF_DRIP : APP_EFF_HAND;
   let tank = Math.min(startTank, tankSize);
-  const tankLevels = [tank];
-  const monthlyDemand = [];
-  const monthlyYield = [];
-  let shortfall = 0, overflow = 0, demandSum = 0;
-  let minTank = tank;
+  let soil = startSoil;
+  const tankLevels = record ? [tank] : null;
+  const monthlyDemand = Array(12).fill(0);
+  const monthlyYield = Array(12).fill(0);
+  let shortfall = 0, overflow = 0, demandSum = 0, minTank = tank, seasonEndTank = tank;
+  const n = Y.rain.length;
 
-  for (let m = 0; m < 12; m++) {
-    const y = monthly[m].rain * roofSize * RUNOFF;
-    monthlyYield.push(y);
-    tank += y;
+  for (let i = 0; i < n; i++) {
+    const rain = Y.rain[i], m = Y.month[i];
+    const yieldL = rain * roofSize * RUNOFF;
+    tank += yieldL;
     if (tank > tankSize) { overflow += tank - tankSize; tank = tankSize; }
+    monthlyYield[m] += yieldL;
 
-    const etcrop = monthly[m].et0 * kc[m];
-    const effRain = Math.min(monthly[m].rain * EFF_RAIN, etcrop);
-    const demand = Math.max(0, etcrop - effRain) * gardenSize * mult;
-    monthlyDemand.push(demand);
-    demandSum += demand;
-
-    const used = Math.min(tank, demand);
-    tank -= used;
-    if (demand > used) shortfall += demand - used;
+    soil += rain;
+    if (soil > SOIL_RAW) soil = SOIL_RAW;
+    soil -= Y.et0[i] * Y.kcd[i] * etMult;
+    if (soil < 0) {
+      const demand = -soil * gardenSize / appEff;
+      soil = 0;
+      demandSum += demand;
+      monthlyDemand[m] += demand;
+      const used = Math.min(tank, demand);
+      tank -= used;
+      if (demand > used) shortfall += demand - used;
+    }
     if (tank < minTank) minTank = tank;
-    tankLevels.push(tank);
+    if (m === params.seasonEndMonth && (i === n - 1 || Y.month[i + 1] !== m)) seasonEndTank = tank;
+    if (record) tankLevels.push(tank);
   }
-  return { tankLevels, monthlyDemand, monthlyYield, shortfall, overflow, demandSum, endTank: tank, minTank };
+  return { tankLevels, monthlyDemand, monthlyYield, shortfall, overflow, demandSum,
+           endTank: tank, endSoil: soil, minTank, seasonEndTank, nDays: n };
 }
 
 function simulateAll(climate, params) {
   let years = climate.years;
   if (state.dryYear && years.length) {
-    const totals = years.map(y => y.monthly.reduce((s, m) => s + m.rain, 0));
-    const minIdx = totals.indexOf(Math.min(...totals));
-    years = [years[minIdx]];
+    const totals = years.map(Y => Y.rain.reduce((s, r) => s + r, 0));
+    years = [years[totals.indexOf(Math.min(...totals))]];
   }
-  // Two-pass warmup so the starting tank level reflects steady state.
-  let startTank = params.tankSize * 0.5;
-  for (const yr of years) {
-    const r = simulateYear(yr.monthly, climate.kc, { ...params, startTank });
-    startTank = r.endTank;
+  // Reserve is measured at the end of the growing season (Sep north, Mar south).
+  const p = { ...params, seasonEndMonth: climate.kc[6] > 0 ? 8 : 2 };
+  // Two-pass warmup so the starting tank/soil state reflects steady state.
+  let tank = p.tankSize * 0.5, soil = SOIL_RAW;
+  for (const Y of years) {
+    const r = simulateYear(Y, { ...p, record: false }, tank, soil);
+    tank = r.endTank; soil = r.endSoil;
   }
   const results = [];
-  for (const yr of years) {
-    const r = simulateYear(yr.monthly, climate.kc, { ...params, startTank });
-    results.push({ year: yr.year, ...r });
-    startTank = r.endTank;
+  for (const Y of years) {
+    const r = simulateYear(Y, p, tank, soil);
+    results.push({ year: Y.year, ...r });
+    tank = r.endTank; soil = r.endSoil;
+  }
+  // Chain the current partial year on top so the chart runs up to "today".
+  // It is excluded from verdict counting (r.partial) and from dry-year mode.
+  if (climate.partial && !state.dryYear && params.record !== false) {
+    const r = simulateYear(climate.partial, p, tank, soil);
+    results.push({ year: climate.partial.year, partial: true, ...r });
   }
   return results;
 }
@@ -316,7 +363,8 @@ function recompute() {
     gardenSize: state.gardenSize,
     roofSize: state.roofSize,
     tankSize: state.tankSize,
-    mult: demandMult(state.mulch, state.drip),
+    mulch: state.mulch,
+    drip: state.drip,
   };
   const results = simulateAll(state.climate, params);
   renderClimateBand();
@@ -337,21 +385,22 @@ function renderClimateBand() {
 }
 
 function renderVerdict(results, params) {
-  const ok = results.filter(r => r.shortfall < 1).length;
-  const total = results.length;
-  const worst = results.reduce((w, r) => r.shortfall > (w?.shortfall ?? -1) ? r : w, null);
-  const minSepReserve = Math.min(...results.map(r => r.tankLevels[9])); // end of Sep
-  const avgOverflow = results.reduce((s, r) => s + r.overflow, 0) / total;
+  const full = results.filter(r => !r.partial);
+  const ok = full.filter(r => r.shortfall < 1).length;
+  const total = full.length;
+  const worst = full.reduce((w, r) => r.shortfall > (w?.shortfall ?? -1) ? r : w, null);
+  const minSepReserve = Math.min(...full.map(r => r.seasonEndTank));
+  const avgOverflow = full.reduce((s, r) => s + r.overflow, 0) / total;
 
   let head, klass;
   if (ok === total && minSepReserve > params.tankSize * 0.15) {
-    head = `Self-sufficient. The tank holds enough to carry the garden through every recent year with comfortable margin.`;
+    head = `Self-sufficient. The tank holds enough to carry the garden through every one of the last ${total} years with comfortable margin.`;
     klass = 'accent-good';
   } else if (ok === total) {
     head = `Just enough. Every year worked, but the tank ran close to empty in late summer — a bigger tank or roof would add resilience.`;
     klass = 'accent-tight';
   } else if (ok > 0) {
-    head = `Tight. ${ok} of ${total} recent years made it. The garden would have needed mains backup in ${total - ok}.`;
+    head = `Tight. ${ok} of the last ${total} years made it. The garden would have needed mains backup in ${total - ok}.`;
     klass = 'accent-tight';
   } else {
     head = `Not yet. The catchment or storage isn't large enough to bridge the dry months. Try a bigger roof or tank.`;
@@ -372,20 +421,20 @@ function renderVerdict(results, params) {
 
 function renderSavings() {
   if (!state.climate) return;
-  const baseParams = {
-    gardenSize: state.gardenSize,
-    roofSize: state.roofSize,
-    tankSize: state.tankSize,
-  };
-  // Total demand for a single average year, with various mults
-  const avgY = { monthly: state.climate.avgMonthly };
-  function annualDemand(mult) {
-    return simulateYear(avgY.monthly, state.climate.kc, { ...baseParams, mult, startTank: baseParams.tankSize }).demandSum;
+  // Average annual demand across the complete years for a mulch/drip combination.
+  // (Demand is independent of roof and tank size.)
+  function annualDemand(mulch, drip) {
+    const params = {
+      gardenSize: state.gardenSize, roofSize: state.roofSize, tankSize: state.tankSize,
+      mulch, drip, record: false,
+    };
+    const full = simulateAll(state.climate, params).filter(r => !r.partial);
+    return full.reduce((s, r) => s + r.demandSum, 0) / full.length;
   }
-  const baseline = annualDemand(1.0);
-  const cur = annualDemand(demandMult(state.mulch, state.drip));
-  const saveMulch = annualDemand(demandMult(false, state.drip)) - annualDemand(demandMult(true, state.drip));
-  const saveDrip  = annualDemand(demandMult(state.mulch, false)) - annualDemand(demandMult(state.mulch, true));
+  const baseline = annualDemand(false, false);
+  const cur = annualDemand(state.mulch, state.drip);
+  const saveMulch = annualDemand(false, state.drip) - annualDemand(true, state.drip);
+  const saveDrip  = annualDemand(state.mulch, false) - annualDemand(state.mulch, true);
 
   $('mulchSaving').textContent = state.mulch ? '−' + fmtKL(saveMulch) : '–';
   $('dripSaving').textContent  = state.drip  ? '−' + fmtKL(saveDrip)  : '–';
@@ -450,51 +499,62 @@ function renderTankChart(results) {
     el('rect', { x: x1, y: PT, width: x2 - x1, height: plotH, fill: '#5a7a3e', opacity: 0.05 }, svg);
   }
 
-  // Plot one polyline per year.
+  // Plot one polyline per year, at daily resolution. The current partial year
+  // is drawn in an accent colour on top, ending where the data ends ("today").
+  const fullCount = results.filter(r => !r.partial).length;
   results.forEach((r, i) => {
-    const isLast = i === results.length - 1;
+    const yearLen = r.partial ? 365 : r.nDays;
     const points = r.tankLevels.map((v, j) => {
-      const x = PL + colW * j;
+      const x = PL + plotW * Math.min(1, j / yearLen);
       const y = PT + plotH * (1 - Math.max(0, v) / tankSize);
       return `${x.toFixed(1)},${y.toFixed(1)}`;
     }).join(' ');
-    const opacity = 0.18 + 0.6 * (i / Math.max(1, results.length - 1));
+    const opacity = r.partial ? 0.9 : 0.16 + 0.6 * (i / Math.max(1, fullCount - 1));
     el('polyline', {
       points,
       fill: 'none',
-      stroke: '#2f5d7a',
-      'stroke-width': isLast ? 2.4 : 1.4,
+      stroke: r.partial ? '#8a6d2f' : '#2f5d7a',
+      'stroke-width': r.partial ? 2.6 : i === fullCount - 1 ? 2.2 : 1.3,
       'stroke-linecap': 'round',
       'stroke-linejoin': 'round',
       opacity,
     }, svg);
+    if (r.partial) {
+      // Mark the "today" end point.
+      const j = r.tankLevels.length - 1;
+      const cx = PL + plotW * Math.min(1, j / yearLen);
+      const cy = PT + plotH * (1 - Math.max(0, r.tankLevels[j]) / tankSize);
+      el('circle', { cx, cy, r: 3.4, fill: '#8a6d2f' }, svg);
+    }
 
-    // Highlight shortfall regions where tank hits zero
+    // Highlight dry spells: consolidate runs of consecutive empty-tank days.
     if (r.shortfall > 0) {
-      r.tankLevels.forEach((v, j) => {
-        if (j === 0) return;
-        const prev = r.tankLevels[j - 1];
-        if (v <= 0.5 && prev <= 0.5) {
+      let runStart = -1;
+      for (let j = 1; j <= r.tankLevels.length; j++) {
+        const dry = j < r.tankLevels.length && r.tankLevels[j] <= 0.5 && r.tankLevels[j - 1] <= 0.5;
+        if (dry && runStart < 0) runStart = j - 1;
+        if (!dry && runStart >= 0) {
           el('line', {
-            x1: PL + colW * (j - 1), x2: PL + colW * j,
+            x1: PL + plotW * (runStart / yearLen), x2: PL + plotW * ((j - 1) / yearLen),
             y1: PT + plotH, y2: PT + plotH,
-            stroke: '#b94a2b',
-            'stroke-width': 3,
-            opacity: 0.7,
+            stroke: '#b94a2b', 'stroke-width': 3, opacity: 0.7,
           }, svg);
+          runStart = -1;
         }
-      });
+      }
     }
   });
 
-  // Legend
+  // Legend — coverage % for years that fell short.
   const legend = $('tankLegend');
   legend.innerHTML = '';
   results.forEach((r, i) => {
-    const op = 0.18 + 0.6 * (i / Math.max(1, results.length - 1));
+    const op = r.partial ? 1 : 0.16 + 0.6 * (i / Math.max(1, fullCount - 1));
+    const color = r.partial ? '#8a6d2f' : '#2f5d7a';
+    const cov = r.demandSum > 0 ? Math.round((1 - r.shortfall / r.demandSum) * 100) : 100;
     const item = document.createElement('span');
     item.className = 'legend-item';
-    item.innerHTML = `<span class="legend-swatch" style="background:#2f5d7a;opacity:${op}"></span>${r.year}${r.shortfall > 0 ? ` <span style="color:#b94a2b">· ${fmtL(r.shortfall)} short</span>` : ''}`;
+    item.innerHTML = `<span class="legend-swatch" style="background:${color};opacity:${op}"></span>${r.year}${r.partial ? ' so far' : ''}${r.shortfall > 0.5 ? ` <span style="color:#b94a2b">· ${cov}% covered</span>` : ''}`;
     legend.appendChild(item);
   });
 }
@@ -507,13 +567,14 @@ function renderBalanceChart(results) {
   const plotW = W - PL - PR;
   const plotH = H - PT - PB;
 
-  // Average across simulation years
+  // Average across complete simulation years
+  const full = results.filter(r => !r.partial);
   const avgYield = Array(12).fill(0);
   const avgDemand = Array(12).fill(0);
-  results.forEach(r => {
+  full.forEach(r => {
     for (let m = 0; m < 12; m++) {
-      avgYield[m]  += r.monthlyYield[m]  / results.length;
-      avgDemand[m] += r.monthlyDemand[m] / results.length;
+      avgYield[m]  += r.monthlyYield[m]  / full.length;
+      avgDemand[m] += r.monthlyDemand[m] / full.length;
     }
   });
   const maxV = Math.max(1, ...avgYield, ...avgDemand);
@@ -575,7 +636,9 @@ function reliabilityScore(roof, tank) {
     gardenSize: state.gardenSize,
     roofSize: roof,
     tankSize: tank,
-    mult: demandMult(state.mulch, state.drip),
+    mulch: state.mulch,
+    drip: state.drip,
+    record: false,   // skip per-day level arrays — this runs ~500× per render
   };
   const results = simulateAll(state.climate, params);
   let shortPct = 0;
@@ -583,8 +646,7 @@ function reliabilityScore(roof, tank) {
   for (const r of results) {
     const totalDemand = r.demandSum || 1;
     shortPct += r.shortfall / totalDemand;
-    const sepReserve = Math.max(0, r.tankLevels[9]) / tank; // end of Sep / tank
-    reservePct += sepReserve;
+    reservePct += Math.max(0, r.seasonEndTank) / tank;
   }
   shortPct /= results.length;
   reservePct /= results.length;
@@ -889,12 +951,22 @@ function geometryCentroid(geom) {
 
 // Unified resolver: try BAN (France, address-level) first, then Open-Meteo (worldwide cities).
 async function resolveLocation(query) {
+  // BAN fuzzy-matches worldwide city names to French streets ("Melbourne" →
+  // "Rue de Melbourne, Tourcoing" at score 0.7). Only let a street-level BAN
+  // hit win when the query actually looks like a French address; bare place
+  // names may only match BAN municipalities, else fall through to Open-Meteo.
+  const addressy = /\d/.test(query) ||
+    /\b(rue|avenue|av|boulevard|bd|chemin|impasse|place|all[ée]e|route|quai|hameau|lieu-dit)\b/i.test(query);
   let banFeat = null;
   try {
     const res = await fetch(`${BAN_URL}?q=${encodeURIComponent(query)}&limit=3`);
     if (res.ok) {
       const j = await res.json();
-      banFeat = (j.features || []).find(f => f.properties.score >= 0.4);
+      banFeat = (j.features || []).find(f => {
+        const p = f.properties;
+        if (p.type === 'municipality') return p.score >= 0.7;
+        return addressy && p.score >= 0.4;
+      });
     }
   } catch {}
   if (banFeat) {
