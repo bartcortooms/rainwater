@@ -51,12 +51,14 @@ These are bug fixes that took time to find — don't reintroduce them:
 
 Calibrated for a typical home potager, not commercial monoculture — the values come with citations in `app.js` and the README's "How it works". The constants live at the top of `app.js`:
 
-- `KC_NORTH` — density-corrected K<sub>c</sub> curve (peak **0.90** in July, not the FAO-56 textbook 1.05). Mirrored 6 months for southern hemisphere.
-- `EFF_RAIN = 0.85` — effective-rainfall fraction for oceanic regimes (FAO Bull. 25 / USDA SCS).
-- `MULCH_FACTOR = 0.70`, `DRIP_FACTOR = 0.80` — multiplicative demand reductions.
+- `KC_NORTH` — density-corrected K<sub>c</sub> curve (peak **0.90** in July, not the FAO-56 textbook 1.05). Mirrored 6 months for southern hemisphere, interpolated daily between month midpoints (`kcAt`).
+- `SOIL_RAW = 25` — mm of readily-available water in the root zone. This bucket **is** the effective-rainfall model: rain tops it up, excess percolates away, irrigation replaces whatever ET empties. Don't reintroduce a flat effective-rain fraction on top of it — that would double-count.
+- `MULCH_FACTOR = 0.75` — ET reduction from heavy mulch (FAO-56 Ch. 10; Mao et al. 2024). Applied to total ETc, so mulch also stretches rain, not just irrigation.
+- `APP_EFF_DRIP = 0.90`, `APP_EFF_HAND = 0.75` — application efficiencies; gross tank draw = net deficit ÷ efficiency.
 - `RUNOFF = 0.8` — roof runoff coefficient including first-flush loss.
+- `CLIMATE_YEARS = 10` — complete calendar years simulated; the current partial year is chained on top, drawn as the gold "so far" line, and excluded from verdict counts (`r.partial`).
 
-The user's empirical sanity check ("a 5,000 L tank only covering 2 of 5 years feels too high") is the reason these are calibrated *down* from the FAO single-Kc table. If you raise them, expect pushback unless there's a study to cite.
+**The time step is daily, deliberately.** The model used to be monthly; that combination (monthly yield-after-spillage) systematically understates what a small, frequently-refilling tank delivers (Fewkes & Butler 2000; Mitchell 2007) while monthly rain-vs-ET netting understates demand. The old constants were tuned down partly to mask that structural bias. Don't "simplify" back to monthly aggregation, and don't retune constants without re-running the real-world calibration anchors: peak dry-week gross demand should land ~40–65 L/m²/wk unmitigated in a canicule (French guides: 20–30, doubled in heatwave), daily dry-spell draw with mulch+drip ~4–5 L/m²/day (mon-potager-en-carre.fr calculator: 3–6), and a 1,000 L tank on a ~30 m² Nantes potager should read "fine in wet years, fails in 2022-style droughts" (matches aujardin.org witness reports).
 
 ## When verifying changes in the browser
 
