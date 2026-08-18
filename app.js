@@ -20,6 +20,10 @@ const MULCH_FACTOR = 0.75;   // 25% ET cut — heavy organic mulch halves soil e
                              // Mao et al. 2024 review). Applied to total ETc.
 const APP_EFF_DRIP = 0.90;   // application efficiency, drip (USDA-ARS 90–95%)
 const APP_EFF_HAND = 0.75;   // application efficiency, watering can / sprinkler (65–75%)
+const MAINS_EUR_PER_M3 = 4;   // assumed mains tariff for the “cost to bridge” estimate;
+                             // stated as an assumption in the copy, not a lookup
+const MAX_PRACTICAL_TANK = 50000;  // L — above this it is a buried cistern, not a tank,
+                                   // so we stop calling extra storage a real option
 const CLIMATE_YEARS = 10;    // complete years simulated; the current partial year
                              // is chained on top and drawn as "so far"
 
@@ -384,6 +388,21 @@ function renderClimateBand() {
   $('seasonDeficit').textContent = fmt0(c.seasonDeficit);
 }
 
+// Smallest tank (L, rounded up to 500) that removes the shortfall from every
+// complete year at the current roof and garden. Returns null when no tank up to
+// `cap` does — meaning the roof, not the storage, is the binding constraint.
+function smallestTankThatCloses(params, cap) {
+  const closes = t => simulateAll(state.climate, { ...params, tankSize: t, record: false })
+    .filter(r => !r.partial).every(r => r.shortfall < 1);
+  if (!closes(cap)) return null;
+  let lo = 0, hi = cap;
+  while (hi - lo > 100) {
+    const mid = Math.round((lo + hi) / 2);
+    if (closes(mid)) hi = mid; else lo = mid;
+  }
+  return Math.ceil(hi / 500) * 500;
+}
+
 function renderVerdict(results, params) {
   const full = results.filter(r => !r.partial);
   const ok = full.filter(r => r.shortfall < 1).length;
@@ -418,20 +437,53 @@ function renderVerdict(results, params) {
   $('vReserve').textContent = fmtL(Math.max(0, minSepReserve));
   $('vOverflow').textContent = fmtL(avgOverflow) + ' / yr avg';
 
-  // Perspective note: a shortfall year is not a failed garden. Storage has
-  // steeply diminishing returns — the last few % of self-sufficiency can cost
-  // several extra tanks to replace a few euros of mains water per year.
+  // Perspective note: a shortfall year is not a failed garden. Say what it costs
+  // to bridge from the tap, then name which constraint is actually binding —
+  // storage (the roof catches enough, it just arrives out of season) or
+  // catchment (the water never lands, so no tank can help).
   const note = $('verdictNote');
   if (ok < total) {
     const avgShort = full.reduce((s, r) => s + r.shortfall, 0) / total;
-    const eur = Math.max(1, Math.round(avgShort * 4 / 1000));
+    const avgDemand = full.reduce((s, r) => s + r.demandSum, 0) / total;
+    const avgYield = full.reduce((s, r) => s + r.monthlyYield.reduce((a, b) => a + b, 0), 0) / total;
+    const eur = Math.max(1, Math.round(avgShort * MAINS_EUR_PER_M3 / 1000));
+
+    // Only worth searching for a tank size when a year's catchment can cover a
+    // year's demand at all; otherwise no amount of storage closes the gap.
+    const needTank = avgYield > avgDemand ? smallestTankThatCloses(params, MAX_PRACTICAL_TANK) : null;
+    let diagnosis;
+    if (needTank) {
+      // Storage-limited: a year's catchment covers a year's demand, the water
+      // just isn't there on the days the garden needs it. Don't claim *why*
+      // (seasonal carry-over vs. buffering between showers) — we haven't
+      // measured that. Only editorialise about cost when the tank needed is
+      // big enough to be a building project rather than a delivery.
+      diagnosis = `The roof is not the constraint — it catches <strong>${fmtKL(avgYield)}</strong> a year ` +
+        `against <strong>${fmtKL(avgDemand)}</strong> of demand. The water just doesn't arrive when the ` +
+        `garden needs it, so this is a storage limit: about <strong>${fmtKL(needTank)}</strong> of tank ` +
+        `would carry every one of these ${total} years` +
+        (needTank <= HM_TANK_MAX
+          ? `, and the heatmap below shows what each step short of that buys.`
+          : `. That is a buried cistern rather than an off-the-shelf tank, so it is worth weighing ` +
+            `against the €${eur} a year the tap would cost instead.`);
+    } else if (avgYield > avgDemand) {
+      diagnosis = `Over a full year the roof catches <strong>${fmtKL(avgYield)}</strong> against ` +
+        `<strong>${fmtKL(avgDemand)}</strong> of demand, so on paper this is a storage problem — but the ` +
+        `dry stretches are long enough that closing it would take more than ${fmtKL(MAX_PRACTICAL_TANK)} ` +
+        `of storage, which is a cistern, not a tank. More roof or less demand is the realistic lever.`;
+    } else {
+      diagnosis = `More storage will not help: the roof catches only <strong>${fmtKL(avgYield)}</strong> ` +
+        `a year against <strong>${fmtKL(avgDemand)}</strong> of demand, and a tank cannot store water ` +
+        `that never lands. Closing this gap means more roof area, a smaller garden, or thriftier planting.`;
+    }
+
     note.hidden = false;
     note.innerHTML = `A shortfall isn't a failed garden — bridging it from the tap averages ` +
       `<strong>${fmtL(avgShort)}</strong> a year (${fmtL(worst.shortfall)} in the worst year), ` +
-      `roughly €${eur} of mains water at ~€4/m³. That is usually far cheaper than more tanks: ` +
-      `size storage for a normal summer, and treat full autonomy as insurance that only pays off ` +
-      `where drought restrictions cut off tap watering. Cutting demand is cheaper still — ` +
-      `shade cloth in the hottest weeks, and crops timed to finish before late summer.`;
+      `roughly €${eur} at a typical €${MAINS_EUR_PER_M3}/m³ mains tariff — worth checking ` +
+      `against your own bill, since rates vary several-fold between countries. ${diagnosis} ` +
+      `Cutting demand is the cheapest lever of all — shade cloth in the hottest weeks, and crops ` +
+      `timed to finish before late summer.`;
   } else {
     note.hidden = true;
   }
