@@ -57,3 +57,11 @@ python3 -m http.server 8765
 ```
 
 No build step. The live-reload edit/refresh cycle is instant.
+
+Run the lightweight local regression suite with Node.js (no install needed):
+
+```sh
+node tests/location.test.cjs
+```
+
+Climate results are hidden while a location loads or when its data is missing or invalid. Retry reloads the selected location without resetting garden and tank settings. Climate records must contain consecutive calendar dates, at least one complete year, and finite nonnegative daily rain and ET₀ values; missing measurements are not treated as zero.

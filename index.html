@@ -10,7 +10,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..900&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css" />
 </head>
-<body>
+<body class="has-no-climate">
   <div class="canvas">
     <header class="masthead">
       <div class="brand">
@@ -44,6 +44,11 @@
         </div>
       </div>
     </section>
+
+    <div class="band climate-status" id="climateStatus" role="status" aria-live="polite">
+      <span id="climateStatusText">Detecting your location…</span>
+      <button type="button" id="retryClimate" hidden>Retry climate data</button>
+    </div>
 
     <section class="band band--climate" id="climateBand">
       <div class="climate-stat">
