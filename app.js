@@ -124,9 +124,25 @@ function kcAt(doy, kc) {
 }
 
 function parseClimate(data, lat) {
-  const days = data.daily.time;
-  const rains = data.daily.precipitation_sum;
-  const ets = data.daily.et0_fao_evapotranspiration;
+  const { time: days, precipitation_sum: rains, et0_fao_evapotranspiration: ets } = data?.daily || {};
+  if (![days, rains, ets].every(Array.isArray) || !days.length ||
+      rains.length !== days.length || ets.length !== days.length) {
+    throw new Error('Climate data is missing daily measurements.');
+  }
+  let previous;
+  for (let i = 0; i < days.length; i++) {
+    const day = days[i];
+    const timestamp = typeof day === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(day)
+      ? Date.parse(day + 'T00:00:00Z') : NaN;
+    if (!Number.isFinite(timestamp) || new Date(timestamp).toISOString().slice(0, 10) !== day ||
+        (i === 0 ? !day.endsWith('-01-01') : timestamp !== previous + 86400e3)) {
+      throw new Error('Climate dates must be consecutive days starting on January 1.');
+    }
+    if (![rains[i], ets[i]].every(v => typeof v === 'number' && Number.isFinite(v) && v >= 0)) {
+      throw new Error('Climate data contains missing or invalid rain or evapotranspiration.');
+    }
+    previous = timestamp;
+  }
 
   // Crop coefficient: shift 6 months for southern hemisphere
   const kc = lat >= 0 ? KC_NORTH.slice() : KC_NORTH.slice(6).concat(KC_NORTH.slice(0, 6));
@@ -137,16 +153,16 @@ function parseClimate(data, lat) {
     const [y, m] = days[i].split('-').map(Number);
     if (!byYear[y]) byYear[y] = { year: y, rain: [], et0: [], month: [], kcd: [] };
     const Y = byYear[y];
-    Y.rain.push(rains[i] ?? 0);
-    Y.et0.push(ets[i] ?? 0);
+    Y.rain.push(rains[i]);
+    Y.et0.push(ets[i]);
     Y.month.push(m - 1);
     Y.kcd.push(kcAt(Y.rain.length - 1, kc));
   }
   const all = Object.values(byYear).sort((a, b) => a.year - b.year);
   // The trailing year is partial unless the archive happens to end on Dec 31.
-  const last = all[all.length - 1];
-  const partial = last.rain.length < 365 ? all.pop() : null;
+  const partial = !days[days.length - 1].endsWith('-12-31') ? all.pop() : null;
   const years = all;
+  if (!years.length) throw new Error('Climate data needs at least one complete calendar year.');
 
   // Monthly aggregates of complete years, for the climate band and heatmap copy.
   const avgMonthly = Array.from({length: 12}, () => ({ rain: 0, et0: 0 }));
@@ -335,27 +351,49 @@ function bindLocationSearch() {
   });
 }
 
-async function applyLocation(loc, opts = {}) {
-  state.location = loc;
-  setLocationDisplay(loc);
-  document.body.classList.add('is-loading');
-  try {
-    state.climate = await fetchClimate(loc.lat, loc.lon);
-  } catch (e) {
-    console.error(e);
-    state.climate = null;
-  }
-  document.body.classList.remove('is-loading');
-  recompute();
+let locationGeneration = 0;
+let roofGeneration = 0;
+let locationOptions = {};
 
-  // Roof auto-detect: only when we have an address-level point in France.
+function setClimateStatus(message, failed = false) {
+  $('climateStatusText').textContent = message;
+  $('climateStatus').hidden = !message;
+  $('retryClimate').hidden = !failed;
+  document.body.classList.toggle('has-no-climate', !state.climate);
+  document.body.classList.toggle('is-loading', !!message && !failed);
+}
+
+async function applyLocation(loc, opts = {}) {
+  const generation = ++locationGeneration;
+  const roofRequest = ++roofGeneration;
+  locationOptions = opts;
+  state.location = loc;
+  state.climate = null;
+  setLocationDisplay(loc);
+  hideRoofResult();
+  setClimateStatus('Loading climate data for ' + loc.name + '…');
+  try {
+    const climate = await fetchClimate(loc.lat, loc.lon);
+    if (generation !== locationGeneration) return;
+    state.climate = climate;
+    setClimateStatus('');
+    recompute();
+  } catch (e) {
+    if (generation !== locationGeneration) return;
+    console.error(e);
+    setClimateStatus('Climate data could not be loaded or is incomplete. Please retry.', true);
+    return;
+  }
+
+  // Only the current location and an untouched roof input may accept detection.
   if (opts.detectRoof && loc.addressLevel && (loc.country === 'France' || !loc.country)) {
-    detectRoofAt(loc.lon, loc.lat).then(r => {
-      if (r) showRoofResult(r);
-      else hideRoofResult();
-    }).catch(err => { console.error(err); hideRoofResult(); });
-  } else {
-    hideRoofResult();
+    try {
+      const result = await detectRoofAt(loc.lon, loc.lat);
+      if (generation !== locationGeneration || roofRequest !== roofGeneration) return;
+      if (result) showRoofResult(result);
+    } catch (err) {
+      if (generation === locationGeneration && roofRequest === roofGeneration) console.error(err);
+    }
   }
 }
 
@@ -1155,6 +1193,11 @@ async function detectRoofAt(lon, lat) {
 }
 
 function hideRoofResult() {
+  clearTimeout(roofMap.fetchTimer);
+  roofMap.resizeObserver?.disconnect();
+  roofMap.container = null;
+  roofMap.svg = null;
+  roofMap.pan = null;
   const status = $('roofStatus');
   status.hidden = true;
   status.innerHTML = '';
@@ -1497,6 +1540,8 @@ function scheduleRoofMapFetch(delay = 220) {
 }
 
 async function fetchRoofMapBuildings() {
+  const svg = roofMap.svg;
+  if (!svg) return;
   const { w, h } = roofMapViewport();
   const z = roofMap.zoom;
   const [cx, cy] = lonLatToPx(roofMap.centerLon, roofMap.centerLat, z);
@@ -1519,6 +1564,7 @@ async function fetchRoofMapBuildings() {
     const r = await fetch(url);
     if (!r.ok) return;
     const j = await r.json();
+    if (svg !== roofMap.svg) return;
     for (const f of j.features || []) {
       const cleaned = { ...f, geometry: stripZ(f.geometry) };
       const k = featureKey(cleaned);
@@ -1544,6 +1590,7 @@ function bindRoofSliderClear() {
   const slider = $('roofSize');
   slider.addEventListener('input', () => {
     if (_suppressRoofClear) return;
+    ++roofGeneration;
     const status = $('roofStatus');
     if (!status.hidden) hideRoofResult();
   });
@@ -1552,6 +1599,7 @@ function bindRoofSliderClear() {
 /* ─────────────── Boot ─────────────── */
 
 (async function init() {
+  $('retryClimate').addEventListener('click', () => applyLocation(state.location, locationOptions));
   bindInputs();
   bindLocationSearch();
   bindPreciseLoc();
@@ -1563,6 +1611,7 @@ function bindRoofSliderClear() {
   $('tankSizeVal').textContent = state.tankSize.toLocaleString();
 
   document.body.classList.add('is-loading');
+  const generation = locationGeneration;
   const loc = await detectLocation();
-  await applyLocation(loc);
+  if (generation === locationGeneration) await applyLocation(loc);
 })();

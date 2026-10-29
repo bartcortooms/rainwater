@@ -674,3 +674,13 @@ input[type="range"]:focus::-webkit-slider-thumb { border-color: var(--rain); }
   .stat-value { font-size: 32px; }
   .card { padding: 22px 22px; }
 }
+
+/* Keep results unavailable until they belong to the selected location. */
+[hidden] { display: none !important; }
+.has-no-climate .band--climate,
+.has-no-climate .card--verdict,
+.has-no-climate .card--chart,
+.has-no-climate .toggle-saving,
+.has-no-climate .toggle-summary { display: none; }
+.climate-status { display: flex; align-items: center; gap: 1rem; }
+.climate-status button { font: inherit; cursor: pointer; }
